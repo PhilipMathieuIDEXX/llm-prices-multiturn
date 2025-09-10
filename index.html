@@ -169,12 +169,9 @@
             cursor: pointer;
             color: #c00;
         }
+        /* hide old per-turn total cost */
         .turn-item .turn-cost {
-            position: absolute;
-            top: 10px;
-            right: 40px;
-            font-size: 12px;
-            color: #555;
+            display: none;
         }
         .turn-controls {
             display: flex;
@@ -186,6 +183,34 @@
             margin-left: 4px;
             font-size: 14px;
             color: #666;
+        }
+        /* Container for input and unit label */
+        .input-with-unit {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .input-with-unit input {
+            flex: 1;
+            width: auto;
+        }
+        /* Per-turn cost blocks */
+        .turn-costs {
+            margin-top: 8px;
+            font-size: 13px;
+            color: #333;
+        }
+        .turn-costs div {
+            margin-top: 2px;
+        }
+        /* Combined turn total cost */
+        .turn-item .turn-total {
+            position: absolute;
+            bottom: 8px;
+            right: 8px;
+            font-size: 13px;
+            color: #333;
+            font-weight: bold;
         }
         /* Prominent rate labels */
         .rate-label {
@@ -202,6 +227,13 @@
             border: 1px solid #ddd;
             border-radius: 4px;
             font-size: 16px;
+        }
+        /* Overview text */
+        .overview-text {
+            font-size: 14px;
+            color: #555;
+            margin-top: 15px;
+            line-height: 1.5;
         }
     </style>
     <script defer data-domain="llm-prices.com" src="https://plausible.io/js/script.js"></script>
@@ -229,6 +261,10 @@
                 <div class="result">
                     <p>Total cost: $<span id="costDollars">0.000000</span></p>
                     <p>Total cost: <span id="costCents">0</span> cents</p>
+                </div>
+                <!-- Overall site overview explanation -->
+                <div class="overview-text">
+                    Use the boxes above to enter token counts for each turn of a conversation. The calculator will compute the cumulative cost based on the input and output rates you provide. You can add or remove turns as needed. Click on a model in the table to auto-fill its rates. The URL will update to reflect your current settings, allowing you to bookmark or share specific configurations.
                 </div>
             </div>
 
@@ -438,30 +474,50 @@
 
         function renderTurns() {
             const list = document.getElementById('turnsList');
+            // get current rates for per-turn cost calculations
+            const inputRate = parseFloat(document.getElementById(elIds.inputCost).value) || 0;
+            const outputRate = parseFloat(document.getElementById(elIds.outputCost).value) || 0;
             list.innerHTML = '';
             turns.forEach((t, i) => {
                 const div = document.createElement('div');
+                // compute this turn's input/output costs
+                const ic = t.input * inputRate / 1000000;
+                const oc = t.output * outputRate / 1000000;
+                const icStr = formatPrice(ic);
+                const ocStr = formatPrice(oc);
                 div.className = 'turn-item';
                 // Compute per-turn cost formatting
                 const cost = turnCosts[i] || 0;
                 const costStr = '$' + cost.toFixed(6);
                 div.innerHTML = `
                     <button class="remove-turn-btn" onclick="removeTurn(${i})" title="Remove turn">&times;</button>
-                    <span class="turn-cost">${costStr}</span>
                     <div class="input-group">
-                        <label for="turn-${i}-in">Turn ${i + 1} Input <span class="unit-label">tokens</span>:</label>
-                        <input id="turn-${i}-in" type="text" placeholder="e.g. 1,000"
-                            value="${formatNumber(t.input)}"
-                            onfocus="unformatNumberInput(this)" onblur="formatNumberInput(this)"
-                            onchange="updateTurn(${i}, 'input', this.value)">
+                        <label for="turn-${i}-in">Turn ${i + 1} Input:</label>
+                        <div class="input-with-unit">
+                            <input id="turn-${i}-in" type="text" placeholder="e.g. 1,000"
+                                value="${formatNumber(t.input)}"
+                                onfocus="unformatNumberInput(this)" onblur="formatNumberInput(this)"
+                                onchange="updateTurn(${i}, 'input', this.value)">
+                            <span class="unit-label">tokens</span>
+                        </div>
+                        <div class="turn-costs">
+                            <div>Input cost: ${icStr}</div>
+                        </div>
                     </div>
                     <div class="input-group">
-                        <label for="turn-${i}-out">Turn ${i + 1} Output <span class="unit-label">tokens</span>:</label>
-                        <input id="turn-${i}-out" type="text" placeholder="e.g. 500"
-                            value="${formatNumber(t.output)}"
-                            onfocus="unformatNumberInput(this)" onblur="formatNumberInput(this)"
-                            onchange="updateTurn(${i}, 'output', this.value)">
+                        <label for="turn-${i}-out">Turn ${i + 1} Output:</label>
+                        <div class="input-with-unit">
+                            <input id="turn-${i}-out" type="text" placeholder="e.g. 500"
+                                value="${formatNumber(t.output)}"
+                                onfocus="unformatNumberInput(this)" onblur="formatNumberInput(this)"
+                                onchange="updateTurn(${i}, 'output', this.value)">
+                            <span class="unit-label">tokens</span>
+                        </div>
+                        <div class="turn-costs">
+                            <div>Output cost: ${ocStr}</div>
+                        </div>
                     </div>
+                    <div class="turn-total">Turn total: $${trimZeros((ic + oc).toFixed(6))}</div>
                 `;
                 list.appendChild(div);
             });
