@@ -38,10 +38,12 @@
                 flex: 2;
             }
         }
+        /* Headings with consistent spacing */
         h1, h2 {
             font-size: 24px;
             color: #333;
-            margin-bottom: 20px;
+            margin-top: 0;
+            margin-bottom: 16px;
             text-align: center;
         }
         .input-group {
@@ -140,6 +142,12 @@
             background-color: #96bce0;
             border-color: #6a9ccf;
             outline: 2px solid #0066cc;
+        }
+        /* Highlight selected preset */
+        .model-name-btn.selected {
+            background-color: #6a9ccf;
+            border-color: #357ab8;
+            color: #fff;
         }
         .disclaimer {
             font-size: 14px;
@@ -414,9 +422,14 @@
             inputCost: 'ic',
             outputCost: 'oc',
             sortBy: 'sb',
-            sortDir: 'sd'
+            sortDir: 'sd',
+            preset: 'm',      // selected preset model key
+            turnIn: 'ti',
+            turnOut: 'to'
         };
 
+        // Track selected preset key
+        let selectedPresetKey = '';
         function updateUrlHash() {
             const params = new URLSearchParams();
             // Only track cost rates in URL, skip tokens inputs for multi-turn mode
@@ -432,6 +445,15 @@
                  params.set(HASH_KEYS.sortDir, currentSortDirection);
             }
 
+            // Embed each turn's token counts
+            for (let i = 0; i < turns.length; i++) {
+                const inp = turns[i].input;
+                const out = turns[i].output;
+                if (inp) params.set(HASH_KEYS.turnIn + i, inp);
+                if (out) params.set(HASH_KEYS.turnOut + i, out);
+            }
+            // Embed selected preset
+            if (selectedPresetKey) params.set(HASH_KEYS.preset, selectedPresetKey);
             const hashString = params.toString();
             if (hashString) {
                 history.replaceState(null, '', '#' + hashString);
@@ -483,12 +505,13 @@
                 // compute this turn's input/output costs
                 const ic = t.input * inputRate / 1000000;
                 const oc = t.output * outputRate / 1000000;
-                const icStr = formatPrice(ic);
-                const ocStr = formatPrice(oc);
+                // format input/output costs with consistent 6-decimal trimming
+                const icStr = '$' + trimZeros(ic.toFixed(6));
+                const ocStr = '$' + trimZeros(oc.toFixed(6));
                 div.className = 'turn-item';
                 // Compute per-turn cost formatting
                 const cost = turnCosts[i] || 0;
-                const costStr = '$' + cost.toFixed(6);
+                const costStr = '$' + trimZeros(cost.toFixed(6));
                 div.innerHTML = `
                     <button class="remove-turn-btn" onclick="removeTurn(${i})" title="Remove turn">&times;</button>
                     <div class="input-group">
@@ -541,7 +564,7 @@
                 prevAccCost = accCost;
             }
             const totalCost = prevAccCost;
-            document.getElementById(elIds.costDollars).textContent = totalCost.toFixed(6);
+            document.getElementById(elIds.costDollars).textContent = trimZeros(totalCost.toFixed(6));
             document.getElementById(elIds.costCents).textContent = trimZeros((totalCost * 100).toFixed(6));
             // Update per-turn cost displays
             renderTurns();
@@ -565,7 +588,10 @@
             
             document.getElementById(elIds.inputCost).value = prices.input;
             document.getElementById(elIds.outputCost).value = prices.output;
-            calculateCost(); // This will also call updateUrlHash
+            // remember selected preset for URL and update table highlight
+            selectedPresetKey = modelKey;
+            updateTableSortVisualsAndData();
+            calculateCost(); // This will also update URL hash
         }
 
         function formatPrice(price) {
@@ -622,8 +648,13 @@
             data.forEach(item => {
                 const row = document.createElement('tr');
                 // Note: onclick now calls window.setPreset because these are dynamically added
+                const isSelected = (item.key === selectedPresetKey) ? ' selected' : '';
                 row.innerHTML = `
-                    <td><button class="model-name-btn" onclick="window.setPreset('${item.key}')">${item.name}</button></td>
+                    <td>
+                      <button class="model-name-btn${isSelected}" onclick="window.setPreset('${item.key}')">
+                        ${item.name}
+                      </button>
+                    </td>
                     <td>${formatPrice(item.input)}</td>
                     <td>${formatPrice(item.output)}</td>
                 `;
@@ -676,7 +707,8 @@
             // Clear filter
             const filterEl = document.getElementById('presetFilter');
             if (filterEl) filterEl.value = '';
-            // Re-render table and cost
+            // Clear selected preset and re-render table and cost
+            selectedPresetKey = '';
             updateTableSortVisualsAndData();
             calculateCost();
         }
@@ -705,10 +737,26 @@
             const inputCostEl = document.getElementById(elIds.inputCost);
             const outputCostEl = document.getElementById(elIds.outputCost);
 
-            if (params.has(HASH_KEYS.inputTokens)) inputTokensEl.value = params.get(HASH_KEYS.inputTokens);
-            if (params.has(HASH_KEYS.outputTokens)) outputTokensEl.value = params.get(HASH_KEYS.outputTokens);
+            // Read cost rates
             if (params.has(HASH_KEYS.inputCost)) inputCostEl.value = params.get(HASH_KEYS.inputCost);
             if (params.has(HASH_KEYS.outputCost)) outputCostEl.value = params.get(HASH_KEYS.outputCost);
+            // Load selected preset model
+            if (params.has(HASH_KEYS.preset)) {
+                const presetKey = params.get(HASH_KEYS.preset);
+                selectedPresetKey = presetKey;
+                setPreset(presetKey);
+            }
+            // Load multi-turn token counts from hash
+            turns.length = 0;
+            for (let idx = 0;; idx++) {
+                const inKey = HASH_KEYS.turnIn + idx;
+                const outKey = HASH_KEYS.turnOut + idx;
+                if (!params.has(inKey) && !params.has(outKey)) break;
+                turns.push({
+                    input: parseFloat(params.get(inKey)) || 0,
+                    output: parseFloat(params.get(outKey)) || 0
+                });
+            }
 
             const sortByFromHash = params.get(HASH_KEYS.sortBy);
             const sortDirFromHash = params.get(HASH_KEYS.sortDir);
@@ -778,9 +826,10 @@
                 el.addEventListener('paste', () => setTimeout(calculateCost, 0));
             });
             // Setup multi-turn UI
-            document.getElementById('addTurnBtn').addEventListener('click', addTurn);
-            // Initialize with one turn
-            addTurn();
+            const addBtn = document.getElementById('addTurnBtn');
+            addBtn.addEventListener('click', addTurn);
+            // If no turns loaded from URL, initialize with one turn
+            if (turns.length === 0) addTurn();
             // Setup table filter and reset
             const filterEl = document.getElementById('presetFilter');
             filterEl.addEventListener('input', updateTableSortVisualsAndData);
