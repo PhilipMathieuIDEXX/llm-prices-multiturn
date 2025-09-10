@@ -159,6 +159,16 @@
             background-color: #fafafa;
             position: relative;
         }
+        .turn-item .remove-turn-btn {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: transparent;
+            border: none;
+            font-size: 16px;
+            cursor: pointer;
+            color: #c00;
+        }
         .turn-item .turn-cost {
             position: absolute;
             top: 10px;
@@ -195,6 +205,10 @@
 
             <div class="presets">
                 <h2>Model prices (per million tokens)</h2>
+                <div class="preset-controls">
+                    <input type="text" id="presetFilter" placeholder="Filter models...">
+                    <button type="button" id="resetBtn">Reset</button>
+                </div>
                 <div id="presetTable">
                     <table class="preset-table">
                         <thead>
@@ -377,6 +391,14 @@
             turns[index][field] = parseFloat(value) || 0;
             calculateCost();
         }
+        
+        // Remove a turn by index
+        function removeTurn(index) {
+            if (index < 0 || index >= turns.length) return;
+            turns.splice(index, 1);
+            turnCosts.splice(index, 1);
+            calculateCost();
+        }
 
         function renderTurns() {
             const list = document.getElementById('turnsList');
@@ -388,6 +410,7 @@
                 const cost = turnCosts[i] || 0;
                 const costStr = '$' + cost.toFixed(6);
                 div.innerHTML = `
+                    <button class="remove-turn-btn" onclick="removeTurn(${i})" title="Remove turn">&times;</button>
                     <span class="turn-cost">${costStr}</span>
                     <div class="input-group">
                         <label for="turn-${i}-in">Turn ${i + 1} Input tokens:</label>
@@ -530,8 +553,34 @@
                 }
             }
 
-            const sortedList = getSortedPresetList(currentSortColumn, currentSortDirection);
+            let sortedList = getSortedPresetList(currentSortColumn, currentSortDirection);
+            // Apply simple text filter
+            const filterEl = document.getElementById('presetFilter');
+            const filterText = filterEl?.value.trim().toLowerCase();
+            if (filterText) {
+                sortedList = sortedList.filter(item => 
+                    item.name.toLowerCase().includes(filterText)
+                );
+            }
             renderTable(sortedList);
+        }
+        
+        // Reset all inputs, turns, and filters to default
+        function resetAll() {
+            // Clear model cost inputs
+            document.getElementById(elIds.inputCost).value = '';
+            document.getElementById(elIds.outputCost).value = '';
+            // Reset turns
+            turns.length = 0;
+            turnCosts = [];
+            // Initialize one empty turn
+            addTurn();
+            // Clear filter
+            const filterEl = document.getElementById('presetFilter');
+            if (filterEl) filterEl.value = '';
+            // Re-render table and cost
+            updateTableSortVisualsAndData();
+            calculateCost();
         }
 
         function sortTable(column) {
@@ -612,8 +661,9 @@
             }
         }
 
-        // Make setPreset globally accessible for dynamically created buttons
+        // Make functions globally accessible for dynamic elements
         window.setPreset = setPreset;
+        window.removeTurn = removeTurn;
 
         // Initialize on DOMContentLoaded
         document.addEventListener('DOMContentLoaded', () => {
@@ -633,8 +683,12 @@
             document.getElementById('addTurnBtn').addEventListener('click', addTurn);
             // Initialize with one turn
             addTurn();
+            // Setup table filter and reset
+            const filterEl = document.getElementById('presetFilter');
+            filterEl.addEventListener('input', updateTableSortVisualsAndData);
+            document.getElementById('resetBtn').addEventListener('click', resetAll);
 
         });
     </script>
 </body>
-</html>
+  </html>
