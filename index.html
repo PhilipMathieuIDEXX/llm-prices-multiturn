@@ -147,6 +147,25 @@
             text-align: center;
             font-style: italic;
         }
+        /* Multi-turn styling */
+        .turns-section {
+            margin-bottom: 20px;
+        }
+        .turn-item {
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 10px;
+            margin-bottom: 10px;
+            background-color: #fafafa;
+            position: relative;
+        }
+        .turn-item .turn-cost {
+            position: absolute;
+            top: 10px;
+            right: 15px;
+            font-size: 12px;
+            color: #555;
+        }
     </style>
     <script defer data-domain="llm-prices.com" src="https://plausible.io/js/script.js"></script>
 </head>
@@ -322,13 +341,10 @@
 
         function updateUrlHash() {
             const params = new URLSearchParams();
-            const inputTokensVal = document.getElementById(elIds.inputTokens).value;
-            const outputTokensVal = document.getElementById(elIds.outputTokens).value;
-            const inputCostVal = document.getElementById(elIds.inputCost).value;
-            const outputCostVal = document.getElementById(elIds.outputCost).value;
+            // Only track cost rates in URL, skip tokens inputs for multi-turn mode
+            const inputCostVal = document.getElementById(elIds.inputCost)?.value;
+            const outputCostVal = document.getElementById(elIds.outputCost)?.value;
 
-            if (inputTokensVal && parseFloat(inputTokensVal) !== 0) params.set(HASH_KEYS.inputTokens, inputTokensVal);
-            if (outputTokensVal && parseFloat(outputTokensVal) !== 0) params.set(HASH_KEYS.outputTokens, outputTokensVal);
             if (inputCostVal && parseFloat(inputCostVal) !== 0) params.set(HASH_KEYS.inputCost, inputCostVal);
             if (outputCostVal && parseFloat(outputCostVal) !== 0) params.set(HASH_KEYS.outputCost, outputCostVal);
 
@@ -349,6 +365,7 @@
         // Manage conversation turns
         let turnCount = 0;
         const turns = [];
+        let turnCosts = []; // per-turn cost cache
 
         function addTurn() {
             turnCount++;
@@ -366,11 +383,20 @@
             list.innerHTML = '';
             turns.forEach((t, i) => {
                 const div = document.createElement('div');
+                div.className = 'turn-item';
+                // Compute per-turn cost formatting
+                const cost = turnCosts[i] || 0;
+                const costStr = '$' + cost.toFixed(6);
                 div.innerHTML = `
-                    <label>Turn ${i + 1} Input tokens:</label>
-                    <input type="number" min="0" value="${t.input}" onchange="updateTurn(${i}, 'input', this.value)">
-                    <label>Turn ${i + 1} Output tokens:</label>
-                    <input type="number" min="0" value="${t.output}" onchange="updateTurn(${i}, 'output', this.value)">
+                    <span class="turn-cost">${costStr}</span>
+                    <div class="input-group">
+                        <label for="turn-${i}-in">Turn ${i + 1} Input tokens:</label>
+                        <input id="turn-${i}-in" type="number" min="0" value="${t.input}" onchange="updateTurn(${i}, 'input', this.value)">
+                    </div>
+                    <div class="input-group">
+                        <label for="turn-${i}-out">Turn ${i + 1} Output tokens:</label>
+                        <input id="turn-${i}-out" type="number" min="0" value="${t.output}" onchange="updateTurn(${i}, 'output', this.value)">
+                    </div>
                 `;
                 list.appendChild(div);
             });
@@ -380,17 +406,24 @@
             const inputCost = parseFloat(document.getElementById(elIds.inputCost).value) || 0;
             const outputCost = parseFloat(document.getElementById(elIds.outputCost).value) || 0;
             let cumulativeInput = 0, cumulativeOutput = 0;
-            // Each turn costs previous tokens + new tokens
             let totalInputCost = 0, totalOutputCost = 0;
+            let prevAccCost = 0;
+            turnCosts = [];
             for (let i = 0; i < turns.length; i++) {
                 cumulativeInput += turns[i].input;
                 cumulativeOutput += turns[i].output;
                 totalInputCost += (cumulativeInput * inputCost / 1000000);
                 totalOutputCost += (cumulativeOutput * outputCost / 1000000);
+                const accCost = totalInputCost + totalOutputCost;
+                const thisCost = accCost - prevAccCost;
+                turnCosts.push(thisCost);
+                prevAccCost = accCost;
             }
-            const totalCost = totalInputCost + totalOutputCost;
+            const totalCost = prevAccCost;
             document.getElementById(elIds.costDollars).textContent = totalCost.toFixed(6);
             document.getElementById(elIds.costCents).textContent = trimZeros((totalCost * 100).toFixed(4));
+            // Update per-turn cost displays
+            renderTurns();
             updateUrlHash();
         }
 
